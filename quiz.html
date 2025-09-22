@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quiz Interaktif</title>
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--correct:#10b981;--wrong:#ef4444}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#071029 0%,#07172b 100%);color:#e6eef6;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02));width:100%;max-width:760px;border-radius:12px;padding:22px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h1{font-size:20px;margin:0}
+    .meta{display:flex;gap:10px;align-items:center}
+    .chip{background:rgba(255,255,255,0.03);padding:6px 10px;border-radius:999px;font-size:13px;color:var(--muted)}
+    .question{font-size:18px;margin:18px 0}
+    .options{display:grid;grid-template-columns:1fr;gap:10px}
+    .option{background:rgba(255,255,255,0.02);padding:12px;border-radius:8px;border:1px solid transparent;cursor:pointer;transition:all .15s}
+    .option:hover{transform:translateY(-3px);box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    .option.correct{border-color:var(--correct);background:linear-gradient(90deg,rgba(16,185,129,0.12),rgba(16,185,129,0.04))}
+    .option.wrong{border-color:var(--wrong);background:linear-gradient(90deg,rgba(239,68,68,0.08),rgba(239,68,68,0.02))}
+    .controls{display:flex;justify-content:space-between;align-items:center;margin-top:18px}
+    .btn{background:var(--accent);color:#022026;padding:10px 14px;border-radius:8px;border:none;cursor:pointer;font-weight:600}
+    .btn.secondary{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03)}
+    .progress{height:10px;background:rgba(255,255,255,0.03);border-radius:999px;overflow:hidden}
+    .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#7dd3fc);width:0%}
+    footer.small{margin-top:12px;font-size:13px;color:var(--muted)}
+    @media (max-width:480px){.question{font-size:16px}}
+  </style>
+</head>
+<body>
+  <main class="card" role="main">
+    <header>
+      <h1>Quiz Interaktif — Sejarah Singkat</h1>
+      <div class="meta">
+        <div class="chip" id="timer">Waktu: 00:30</div>
+        <div class="chip" id="score">Skor: 0</div>
+      </div>
+    </header>
+
+    <section id="quiz">
+      <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+      <p class="question" id="question">Memuat soal...</p>
+      <div class="options" id="options"></div>
+
+      <div class="controls">
+        <button class="btn secondary" id="prev">Sebelumnya</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn secondary" id="skip">Lewati</button>
+          <button class="btn" id="next">Selanjutnya</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="small">Tips: buka file ini di VS Code lalu klik kanan -> Open with Live Server, atau langsung buka file di Chrome.</footer>
+  </main>
+
+  <script>
+    // Soal quiz (bisa ditambah/diubah)
+    const questions = [
+      {
+        q: "Siapakah Orang Yang membuat Revan Naksir",
+        choices: ["Shezil", "Sutan Sjahrir", "Mohammad Yamin", "Tan Malaka"],
+        a: 0
+      },
+      {
+        q: "Tahun,Bulan Dan Tanggal Berapa Revan Mengenal Shezil?",
+        choices: ["20 September 2025", "14 September 2025", "16 september 2025", "19 september 2025"],
+        a: 1
+      },
+      {
+        q: "Kenapa Revan Menyukai Revan",
+        choices: ["Gabut", "Badmood", "Karena Sifat dan kerandomannya", "Bete"],
+        a: 2
+      },
+      {
+        q: "Kapan Revan Menembak Shezil? ",
+        choices: ["15 September 2025", "10 September 2025", "17 September 2025", "21 September 2025"],
+        a: 3
+      },
+      {
+        q: "Dipertemukan Revan dan shezil itu di Game mana ya?",
+        choices: ["FF", "Mobile legend", "Delta Force", "Roblox"],
+        a: 3
+      }
+    ];
+
+    // State
+    let cur = 0;
+    let score = 0;
+    let answered = Array(questions.length).fill(null);
+    const TIME_PER_QUESTION = 30; // detik
+    let timeLeft = TIME_PER_QUESTION;
+    let timerInterval = null;
+
+    // Elements
+    const questionEl = document.getElementById('question');
+    const optionsEl = document.getElementById('options');
+    const nextBtn = document.getElementById('next');
+    const prevBtn = document.getElementById('prev');
+    const skipBtn = document.getElementById('skip');
+    const timerEl = document.getElementById('timer');
+    const scoreEl = document.getElementById('score');
+    const barEl = document.getElementById('bar');
+
+    function startTimer(){
+      clearInterval(timerInterval);
+      timeLeft = TIME_PER_QUESTION;
+      updateTimerText();
+      timerInterval = setInterval(()=>{
+        timeLeft--;
+        updateTimerText();
+        if(timeLeft<=0){
+          clearInterval(timerInterval);
+          // auto skip if time up
+          markSkipped();
+        }
+      },1000);
+    }
+
+    function updateTimerText(){
+      const mm = String(Math.floor(timeLeft/60)).padStart(2,'0');
+      const ss = String(timeLeft%60).padStart(2,'0');
+      timerEl.textContent = `Waktu: ${mm}:${ss}`;
+      const percent = ((TIME_PER_QUESTION - timeLeft)/TIME_PER_QUESTION)*100;
+      barEl.style.width = percent + '%';
+    }
+
+    function renderQuestion(){
+      const item = questions[cur];
+      questionEl.textContent = `${cur+1}. ${item.q}`;
+      optionsEl.innerHTML = '';
+      item.choices.forEach((c,i)=>{
+        const btn = document.createElement('button');
+        btn.className = 'option';
+        btn.type = 'button';
+        btn.innerText = c;
+        btn.dataset.index = i;
+        btn.addEventListener('click', ()=> selectOption(i, btn));
+        optionsEl.appendChild(btn);
+      });
+
+      // restore previous answer highlight
+      if(answered[cur] !== null){
+        Array.from(optionsEl.children).forEach((el, idx)=>{
+          if(idx === answered[cur]){
+            el.classList.add(idx === questions[cur].a ? 'correct' : 'wrong');
+          }
+        });
+      }
+
+      // controls
+      prevBtn.disabled = cur === 0;
+      nextBtn.textContent = cur === questions.length -1 ? 'Selesai' : 'Selanjutnya';
+
+      // update progress bar (overall)
+      const overallPercent = ((cur)/Math.max(questions.length-1,1))*100;
+      barEl.style.width = overallPercent + '%';
+
+      startTimer();
+    }
+
+    function selectOption(index, btn){
+      // ignore if already answered
+      if(answered[cur] !== null) return;
+      answered[cur] = index;
+      // show feedback
+      Array.from(optionsEl.children).forEach((el, idx)=>{
+        if(idx === questions[cur].a) el.classList.add('correct');
+        if(idx === index && idx !== questions[cur].a) el.classList.add('wrong');
+        el.disabled = true;
+      });
+
+      if(index === questions[cur].a){
+        score += 10; // contoh bobot
+        scoreEl.textContent = `Skor: ${score}`;
+      }
+
+      clearInterval(timerInterval);
+    }
+
+    function markSkipped(){
+      // if not answered, leave null but move on
+      if(answered[cur] === null){
+        // briefly flash wrong on none
+        optionsEl.querySelectorAll('.option').forEach(el=>el.disabled = true);
+      }
+      // auto next
+      setTimeout(()=>{
+        if(cur < questions.length -1) { cur++; renderQuestion(); }
+        else finishQuiz();
+      },600);
+    }
+
+    nextBtn.addEventListener('click', ()=>{
+      if(cur < questions.length -1){ cur++; renderQuestion(); }
+      else finishQuiz();
+    });
+
+    prevBtn.addEventListener('click', ()=>{
+      if(cur>0){ cur--; renderQuestion(); }
+    });
+
+    skipBtn.addEventListener('click', ()=>{
+      clearInterval(timerInterval);
+      markSkipped();
+    });
+
+    function finishQuiz(){
+      clearInterval(timerInterval);
+      // show summary
+      const total = questions.length;
+      const correctCount = answered.reduce((acc, val, idx)=> acc + (val === questions[idx].a ? 1:0), 0);
+      const html = `
+        <div style="padding:12px">
+          <h2>Hasil Quiz</h2>
+          <p>Total soal: ${total}</p>
+          <p>Benar: ${correctCount}</p>
+          <p>Skor: ${score}</p>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button id="restart" class="btn">Ulangi</button>
+            <button id="review" class="btn secondary">Tinjau Jawaban</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('quiz').innerHTML = html;
+      document.getElementById('restart').addEventListener('click', ()=> location.reload());
+      document.getElementById('review').addEventListener('click', reviewAnswers);
+    }
+
+    function reviewAnswers(){
+      document.getElementById('quiz').innerHTML = '<h2>Tinjau Jawaban</h2><div id="reviewList"></div><div style="margin-top:12px"><button id="back" class="btn secondary">Kembali</button></div>';
+      const reviewList = document.getElementById('reviewList');
+      questions.forEach((q, i)=>{
+        const container = document.createElement('div');
+        container.style.borderTop = '1px solid rgba(255,255,255,0.03)';
+        container.style.padding = '10px 0';
+        const title = document.createElement('div');
+        title.innerHTML = `<strong>${i+1}. ${q.q}</strong>`;
+        const chosen = answered[i] === null ? 'Tidak dijawab' : q.choices[answered[i]];
+        const correct = q.choices[q.a];
+        const p = document.createElement('p');
+        p.innerHTML = `Jawaban Anda: ${chosen} <br>Jawaban benar: ${correct}`;
+        container.appendChild(title);
+        container.appendChild(p);
+        reviewList.appendChild(container);
+      });
+
+      document.getElementById('back').addEventListener('click', ()=> location.reload());
+    }
+
+    // init
+    renderQuestion();
+  </script>
+</body>
+</html>
